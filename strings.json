@@ -1,0 +1,103 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ha Asset Record",
+        "description": "Welcome to Ha Asset Record! Click Submit to install. Use Options to manage assets."
+      }
+    },
+    "abort": {
+      "already_configured": "Ha Asset Record is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Ha Asset Record Options",
+        "description": "Select an action to manage your assets.",
+        "data": {
+          "action": "Action"
+        },
+        "data_description": {
+          "action": "Choose what you want to do"
+        }
+      },
+      "create_asset": {
+        "title": "Create Asset",
+        "description": "Create a new asset device with all entities.",
+        "data": {
+          "name": "Asset Name"
+        },
+        "data_description": {
+          "name": "Enter a name for the asset (e.g., Living Room AC)"
+        }
+      },
+      "delete_asset": {
+        "title": "Delete Asset",
+        "description": "Select an asset to delete. This will remove the device and all its entities.",
+        "data": {
+          "asset_id": "Asset"
+        },
+        "data_description": {
+          "asset_id": "Select the asset to delete"
+        }
+      }
+    },
+    "error": {
+      "name_required": "Asset name is required.",
+      "no_assets": "No assets available to delete."
+    }
+  },
+  "panel": {
+    "title": "Asset Dashboard",
+    "add_asset": "Add Asset",
+    "edit_asset": "Edit Asset",
+    "name": "Name",
+    "brand": "Brand",
+    "category": "Category",
+    "value": "Value",
+    "warranty": "Warranty",
+    "purchase_at": "Purchase Date",
+    "warranty_until": "Warranty Until",
+    "manual": "Manual",
+    "maintenance": "Maintenance",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "delete_confirm": "Are you sure you want to delete this asset?",
+    "total_assets": "Total Assets",
+    "total_value": "Total Value",
+    "no_assets": "No assets yet",
+    "no_assets_hint": "Click the button above to add your first asset",
+    "expired": "Expired"
+  },
+  "entity": {
+    "datetime": {
+      "purchase_at": {
+        "name": "Purchase Date"
+      },
+      "warranty_until": {
+        "name": "Warranty Until"
+      }
+    },
+    "text": {
+      "brand": {
+        "name": "Brand"
+      },
+      "category": {
+        "name": "Category"
+      },
+      "manual_md": {
+        "name": "Manual"
+      },
+      "maintenance_md": {
+        "name": "Maintenance"
+      }
+    },
+    "number": {
+      "value": {
+        "name": "Value"
+      }
+    }
+  }
+}
