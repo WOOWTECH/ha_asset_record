@@ -8,3 +8,5 @@ node_modules/
 venv/
 *.log
 .DS_Store
+.ha_config_root/
+.ha_config_sub/
