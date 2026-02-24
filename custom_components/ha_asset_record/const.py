@@ -1,6 +1,10 @@
 """Constants for Ha Asset Record integration."""
 
+from __future__ import annotations
+
 from typing import Final
+
+from homeassistant.const import Platform
 
 DOMAIN: Final = "ha_asset_record"
 
@@ -8,8 +12,8 @@ DOMAIN: Final = "ha_asset_record"
 STORAGE_KEY: Final = DOMAIN
 STORAGE_VERSION: Final = 1
 
-# Platforms
-PLATFORMS: Final = ["datetime", "text", "number"]
+# Platforms  [H-01] Use Platform enum instead of raw strings
+PLATFORMS: Final = [Platform.DATETIME, Platform.TEXT, Platform.NUMBER]
 
 # Asset fields
 FIELD_NAME: Final = "name"
@@ -26,7 +30,10 @@ VALUE_MIN: Final = 0
 VALUE_MAX: Final = 99999999
 VALUE_STEP: Final = 1
 
-# Text entity max length (for state, full content in raw_content attribute)
+# [L-05] Maximum length for text entity *state* value.
+# HA core TextEntity hard-caps state at 255 characters independently;
+# this constant controls the truncation we apply before setting state,
+# with the full content stored in the raw_content attribute.
 TEXT_MAX_LENGTH: Final = 255
 
 # Attribute keys
