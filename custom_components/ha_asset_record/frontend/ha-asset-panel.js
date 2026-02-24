@@ -1,3 +1,12 @@
+/**
+ * ha-asset-panel.js - Asset Record panel for Home Assistant
+ *
+ * CDN dependency: lit-element v2.4.0 from unpkg.com
+ * This import loads LitElement, html, css, and unsafeCSS from the CDN.
+ * For future vendoring consideration, this could be replaced with a local
+ * bundled copy of lit-element to eliminate the external network dependency.
+ * Version pinned to 2.4.0 for stability.
+ */
 import {
   LitElement,
   html,
@@ -121,6 +130,39 @@ function getCommonTranslation(key, lang = 'en') {
   return commonTranslations[langKey]?.[key] || commonTranslations['en'][key] || key;
 }
 
+/**
+ * Helper: fire a hass-notification event to show a toast via HA's
+ * built-in notification manager. This follows the same pattern used
+ * by HA core panels (e.g. zwave_js-node-config.ts).
+ */
+function fireHassNotification(element, message) {
+  element.dispatchEvent(
+    new CustomEvent("hass-notification", {
+      detail: { message },
+      bubbles: true,
+      composed: true,
+    })
+  );
+}
+
+/**
+ * Helper: safely parse a date string with cross-browser validation.
+ * Returns a valid Date object or null if parsing fails.
+ * Addresses cross-browser inconsistencies with new Date(isoString).
+ */
+function safeParseDateStr(dateStr) {
+  if (!dateStr || typeof dateStr !== "string") return null;
+  // Normalize date-only strings (YYYY-MM-DD) to avoid UTC/local timezone ambiguity
+  // by appending T00:00:00 so all browsers treat it consistently as local time
+  let normalized = dateStr.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    normalized = normalized + "T00:00:00";
+  }
+  const date = new Date(normalized);
+  if (isNaN(date.getTime())) return null;
+  return date;
+}
+
 class HaAssetPanel extends LitElement {
   static get properties() {
     return {
@@ -133,8 +175,10 @@ class HaAssetPanel extends LitElement {
       _editingAsset: { type: Object },
       _deleteConfirmOpen: { type: Boolean },
       _saving: { type: Boolean },
+      _deleting: { type: Boolean },
       _nameError: { type: Boolean },
       _searchQuery: { type: String },
+      _errorMessage: { type: String },
     };
   }
 
@@ -185,6 +229,35 @@ class HaAssetPanel extends LitElement {
         opacity: 0.9;
       }
 
+      /* Error banner for visible error feedback (M-19) */
+      .error-banner {
+        background: var(--error-color, #f44336);
+        color: white;
+        padding: 12px 16px;
+        border-radius: 4px;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .error-banner-message {
+        flex: 1;
+        font-size: 14px;
+      }
+
+      .error-banner-close {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        padding: 4px;
+        font-size: 18px;
+        line-height: 1;
+        flex-shrink: 0;
+      }
+
       .table-container {
         background: var(--card-background-color);
         border-radius: 8px;
@@ -221,9 +294,19 @@ class HaAssetPanel extends LitElement {
         top: 0;
       }
 
-      tr:hover {
-        background: var(--table-row-background-color, rgba(0,0,0,0.04));
+      /* Keyboard-navigable table rows (M-22) */
+      tbody tr {
         cursor: pointer;
+      }
+
+      tbody tr:hover,
+      tbody tr:focus {
+        background: var(--table-row-background-color, rgba(0,0,0,0.04));
+        outline: none;
+      }
+
+      tbody tr:focus-visible {
+        box-shadow: inset 0 0 0 2px var(--primary-color);
       }
 
       tr:last-child td {
@@ -490,8 +573,10 @@ class HaAssetPanel extends LitElement {
     this._editingAsset = null;
     this._deleteConfirmOpen = false;
     this._saving = false;
+    this._deleting = false;
     this._nameError = false;
     this._searchQuery = "";
+    this._errorMessage = "";
     this._boundHandleKeydown = this._handleKeydown.bind(this);
   }
 
@@ -533,13 +618,30 @@ class HaAssetPanel extends LitElement {
     }
   }
 
+  /**
+   * Show an error message both in console and as a visible notification.
+   * Uses HA's hass-notification event pattern for toast display, with
+   * a fallback error banner rendered in the panel itself.
+   */
+  _showError(message, error) {
+    console.error(message, error);
+    // Fire HA toast notification (bubbles up to notification-manager)
+    fireHassNotification(this, message);
+    // Also set an inline error banner as fallback
+    this._errorMessage = message;
+  }
+
+  _dismissError() {
+    this._errorMessage = "";
+  }
+
   async _loadAssets() {
     this._loading = true;
     try {
       const result = await this.hass.callWS({ type: "ha_asset_record/list" });
       this._assets = result.assets || [];
     } catch (e) {
-      console.error("Failed to load assets:", e);
+      this._showError(this._localize("load_error"), e);
       this._assets = [];
     }
     this._loading = false;
@@ -550,11 +652,11 @@ class HaAssetPanel extends LitElement {
     const translation = this.hass?.localize?.(`component.ha_asset_record.panel.${key}`);
     if (translation) return translation;
 
-    // Fallback translations
+    // Fallback translations (M-21: standardized to "Asset Record" naming)
     const fallbacks = {
-      title: this.hass?.language === "zh-Hant" ? "資產管理" : "Asset Dashboard",
-      add_asset: this.hass?.language === "zh-Hant" ? "新增設備" : "Add Asset",
-      edit_asset: this.hass?.language === "zh-Hant" ? "編輯設備" : "Edit Asset",
+      title: this.hass?.language === "zh-Hant" ? "資產紀錄" : "Asset Record",
+      add_asset: this.hass?.language === "zh-Hant" ? "新增資產" : "Add Asset",
+      edit_asset: this.hass?.language === "zh-Hant" ? "編輯資產" : "Edit Asset",
       name: this.hass?.language === "zh-Hant" ? "名稱" : "Name",
       brand: this.hass?.language === "zh-Hant" ? "品牌" : "Brand",
       category: this.hass?.language === "zh-Hant" ? "類型" : "Category",
@@ -567,37 +669,63 @@ class HaAssetPanel extends LitElement {
       save: this.hass?.language === "zh-Hant" ? "儲存" : "Save",
       cancel: this.hass?.language === "zh-Hant" ? "取消" : "Cancel",
       delete: this.hass?.language === "zh-Hant" ? "刪除" : "Delete",
-      delete_confirm: this.hass?.language === "zh-Hant" ? "確定要刪除此設備嗎？" : "Are you sure you want to delete this asset?",
-      total_assets: this.hass?.language === "zh-Hant" ? "設備總數" : "Total Assets",
+      delete_confirm: this.hass?.language === "zh-Hant" ? "確定要刪除此資產嗎？" : "Are you sure you want to delete this asset?",
+      total_assets: this.hass?.language === "zh-Hant" ? "資產總數" : "Total Assets",
       total_value: this.hass?.language === "zh-Hant" ? "總價值" : "Total Value",
-      no_assets: this.hass?.language === "zh-Hant" ? "尚無設備資料" : "No assets yet",
-      no_assets_hint: this.hass?.language === "zh-Hant" ? "點擊上方按鈕新增您的第一個設備" : "Click the button above to add your first asset",
+      no_assets: this.hass?.language === "zh-Hant" ? "尚無資產資料" : "No assets yet",
+      no_assets_hint: this.hass?.language === "zh-Hant" ? "點擊上方按鈕新增您的第一筆資產" : "Click the button above to add your first asset",
       expired: this.hass?.language === "zh-Hant" ? "已過期" : "Expired",
       name_required: this.hass?.language === "zh-Hant" ? "名稱為必填" : "Name is required",
+      no_search_results: this.hass?.language === "zh-Hant" ? "沒有符合搜尋條件的資產" : "No results found",
+      save_error: this.hass?.language === "zh-Hant" ? "儲存資產失敗" : "Failed to save asset",
+      delete_error: this.hass?.language === "zh-Hant" ? "刪除資產失敗" : "Failed to delete asset",
+      load_error: this.hass?.language === "zh-Hant" ? "載入資產失敗" : "Failed to load assets",
+      invalid_date: this.hass?.language === "zh-Hant" ? "無效日期" : "Invalid date",
+      deleting: this.hass?.language === "zh-Hant" ? "刪除中..." : "Deleting...",
     };
     return fallbacks[key] || key;
   }
 
+  /**
+   * Format a date string for display. Uses safeParseDateStr to validate
+   * the date and handle cross-browser parsing inconsistencies (M-20).
+   */
   _formatDate(dateStr) {
     if (!dateStr) return "-";
-    const date = new Date(dateStr);
-    return date.toLocaleDateString(this.hass?.language || "en");
+    const date = safeParseDateStr(dateStr);
+    if (!date) return this._localize("invalid_date");
+    try {
+      return date.toLocaleDateString(this.hass?.language || "en");
+    } catch (_e) {
+      // Fallback if locale is not supported by browser
+      return date.toLocaleDateString("en");
+    }
   }
 
+  /**
+   * Format a numeric value for display. Explicitly checks for null,
+   * undefined, and empty string so that 0 displays as "0" (L-16).
+   */
   _formatValue(value) {
-    if (value === null || value === undefined || value === 0) return "-";
-    return value.toLocaleString(this.hass?.language || "en");
+    if (value === null || value === undefined || value === "") return "-";
+    return Number(value).toLocaleString(this.hass?.language || "en");
   }
 
+  /**
+   * Determine warranty status. Uses safeParseDateStr for robust
+   * cross-browser date handling (M-20).
+   */
   _getWarrantyStatus(warrantyUntil) {
     if (!warrantyUntil) return { class: "", text: "-" };
 
     const now = new Date();
-    const warranty = new Date(warrantyUntil);
+    const warranty = safeParseDateStr(warrantyUntil);
+    if (!warranty) return { class: "", text: this._localize("invalid_date") };
+
     const daysLeft = Math.ceil((warranty - now) / (1000 * 60 * 60 * 24));
 
     if (daysLeft < 0) {
-      return { class: "warranty-expired", text: `⚠️ ${this._localize("expired")}` };
+      return { class: "warranty-expired", text: this._localize("expired") };
     } else if (daysLeft <= 30) {
       return { class: "warranty-warning", text: this._formatDate(warrantyUntil) };
     }
@@ -616,11 +744,63 @@ class HaAssetPanel extends LitElement {
       maintenance_md: "",
     };
     this._dialogOpen = true;
+    this._errorMessage = "";
+    // Focus the first input after the dialog renders (M-22: accessibility)
+    this.updateComplete.then(() => this._focusFirstDialogInput());
   }
 
   _openEditDialog(asset) {
     this._editingAsset = { ...asset };
     this._dialogOpen = true;
+    this._errorMessage = "";
+    // Focus the first input after the dialog renders (M-22: accessibility)
+    this.updateComplete.then(() => this._focusFirstDialogInput());
+  }
+
+  /**
+   * Focus the first focusable input inside the dialog.
+   * Part of accessibility focus management (M-22).
+   */
+  _focusFirstDialogInput() {
+    const dialog = this.shadowRoot?.querySelector(".dialog");
+    if (!dialog) return;
+    const firstInput = dialog.querySelector("input, textarea, button, select");
+    if (firstInput) firstInput.focus();
+  }
+
+  /**
+   * Trap focus within the dialog when Tab is pressed (M-22: accessibility).
+   * When the user tabs past the last focusable element, focus wraps to the first,
+   * and vice versa with Shift+Tab.
+   */
+  _handleDialogKeydown(e) {
+    if (e.key !== "Tab") return;
+
+    const dialog = this.shadowRoot?.querySelector(".dialog");
+    if (!dialog) return;
+
+    const focusableSelector = 'input, textarea, button:not([disabled]), select, [tabindex]:not([tabindex="-1"])';
+    const focusableElements = [...dialog.querySelectorAll(focusableSelector)];
+    if (focusableElements.length === 0) return;
+
+    const firstFocusable = focusableElements[0];
+    const lastFocusable = focusableElements[focusableElements.length - 1];
+
+    if (e.shiftKey) {
+      // Shift+Tab: if focused on first element, wrap to last
+      if (document.activeElement === firstFocusable ||
+          this.shadowRoot.activeElement === firstFocusable) {
+        e.preventDefault();
+        lastFocusable.focus();
+      }
+    } else {
+      // Tab: if focused on last element, wrap to first
+      if (document.activeElement === lastFocusable ||
+          this.shadowRoot.activeElement === lastFocusable) {
+        e.preventDefault();
+        firstFocusable.focus();
+      }
+    }
   }
 
   _closeDialog() {
@@ -631,7 +811,7 @@ class HaAssetPanel extends LitElement {
   }
 
   async _saveAsset() {
-    // Validate name (trim whitespace)
+    // Validate and trim name (L-17: trim name before sending)
     const name = (this._editingAsset?.name || "").trim();
     if (!name) {
       this._nameError = true;
@@ -649,9 +829,9 @@ class HaAssetPanel extends LitElement {
         await this.hass.callWS({
           type: "ha_asset_record/update",
           asset_id: this._editingAsset.id,
-          name: this._editingAsset.name,
-          brand: this._editingAsset.brand || "",
-          category: this._editingAsset.category || "",
+          name: name,
+          brand: (this._editingAsset.brand || "").trim(),
+          category: (this._editingAsset.category || "").trim(),
           value: parseFloat(this._editingAsset.value) || 0,
           purchase_at: this._editingAsset.purchase_at || null,
           warranty_until: this._editingAsset.warranty_until || null,
@@ -662,9 +842,9 @@ class HaAssetPanel extends LitElement {
         // Create new
         await this.hass.callWS({
           type: "ha_asset_record/create",
-          name: this._editingAsset.name,
-          brand: this._editingAsset.brand || "",
-          category: this._editingAsset.category || "",
+          name: name,
+          brand: (this._editingAsset.brand || "").trim(),
+          category: (this._editingAsset.category || "").trim(),
           value: parseFloat(this._editingAsset.value) || 0,
           purchase_at: this._editingAsset.purchase_at || null,
           warranty_until: this._editingAsset.warranty_until || null,
@@ -675,7 +855,8 @@ class HaAssetPanel extends LitElement {
       this._closeDialog();
       await this._loadAssets();
     } catch (e) {
-      console.error("Failed to save asset:", e);
+      // M-19: show visible error feedback on save failure
+      this._showError(this._localize("save_error"), e);
     } finally {
       this._saving = false;
     }
@@ -683,6 +864,10 @@ class HaAssetPanel extends LitElement {
 
   async _deleteAsset() {
     if (!this._editingAsset?.id) return;
+
+    // L-17: Prevent double-submit during delete
+    if (this._deleting) return;
+    this._deleting = true;
 
     try {
       await this.hass.callWS({
@@ -692,7 +877,10 @@ class HaAssetPanel extends LitElement {
       this._closeDialog();
       await this._loadAssets();
     } catch (e) {
-      console.error("Failed to delete asset:", e);
+      // M-19: show visible error feedback on delete failure
+      this._showError(this._localize("delete_error"), e);
+    } finally {
+      this._deleting = false;
     }
   }
 
@@ -701,6 +889,17 @@ class HaAssetPanel extends LitElement {
       ...this._editingAsset,
       [field]: e.target.value,
     };
+  }
+
+  /**
+   * Handle keyboard activation on table rows (M-22: accessibility).
+   * Enter or Space key opens the asset edit dialog.
+   */
+  _handleRowKeydown(e, asset) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      this._openEditDialog(asset);
+    }
   }
 
   _renderTable() {
@@ -723,7 +922,7 @@ class HaAssetPanel extends LitElement {
         <div class="table-container">
           <div class="empty-state">
             <ha-icon icon="mdi:magnify"></ha-icon>
-            <div>No assets match your search</div>
+            <div>${this._localize("no_search_results")}</div>
           </div>
         </div>
       `;
@@ -745,7 +944,13 @@ class HaAssetPanel extends LitElement {
             ${filteredAssets.map(asset => {
               const warranty = this._getWarrantyStatus(asset.warranty_until);
               return html`
-                <tr @click=${() => this._openEditDialog(asset)}>
+                <tr
+                  tabindex="0"
+                  role="row"
+                  aria-label="${asset.name}"
+                  @click=${() => this._openEditDialog(asset)}
+                  @keydown=${(e) => this._handleRowKeydown(e, asset)}
+                >
                   <td data-label="${this._localize("name")}">${asset.name}</td>
                   <td data-label="${this._localize("brand")}">${asset.brand || "-"}</td>
                   <td data-label="${this._localize("category")}">${asset.category || "-"}</td>
@@ -783,11 +988,25 @@ class HaAssetPanel extends LitElement {
     const title = isEditing ? this._localize("edit_asset") : this._localize("add_asset");
 
     return html`
-      <div class="dialog-backdrop" @click=${this._closeDialog}>
-        <div class="dialog" @click=${e => e.stopPropagation()}>
+      <div
+        class="dialog-backdrop"
+        @click=${this._closeDialog}
+      >
+        <div
+          class="dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="asset-dialog-title"
+          @click=${e => e.stopPropagation()}
+          @keydown=${(e) => this._handleDialogKeydown(e)}
+        >
           <div class="dialog-header">
-            <h2>${title}</h2>
-            <button class="dialog-close" @click=${this._closeDialog}>✕</button>
+            <h2 id="asset-dialog-title">${title}</h2>
+            <button
+              class="dialog-close"
+              @click=${this._closeDialog}
+              aria-label="${this._localize("cancel")}"
+            >&#x2715;</button>
           </div>
 
           <div class="dialog-content">
@@ -796,12 +1015,14 @@ class HaAssetPanel extends LitElement {
               <input
                 type="text"
                 .value=${this._editingAsset?.name || ""}
+                aria-required="true"
+                aria-invalid="${this._nameError}"
                 @input=${e => {
                   this._handleInput(e, "name");
                   this._nameError = false;
                 }}
               />
-              ${this._nameError ? html`<div class="error-message">${this._localize("name_required")}</div>` : ""}
+              ${this._nameError ? html`<div class="error-message" role="alert">${this._localize("name_required")}</div>` : ""}
             </div>
 
             <div class="form-group">
@@ -826,7 +1047,7 @@ class HaAssetPanel extends LitElement {
               <label>${this._localize("value")}</label>
               <input
                 type="number"
-                .value=${this._editingAsset?.value || 0}
+                .value=${this._editingAsset?.value ?? 0}
                 @input=${e => this._handleInput(e, "value")}
               />
             </div>
@@ -871,11 +1092,20 @@ class HaAssetPanel extends LitElement {
                 <div class="dialog-footer" style="background: var(--error-color); color: white;">
                   <div>${this._localize("delete_confirm")}</div>
                   <div class="dialog-footer-right">
-                    <button class="btn btn-secondary" @click=${() => (this._deleteConfirmOpen = false)}>
+                    <button
+                      class="btn btn-secondary"
+                      @click=${() => (this._deleteConfirmOpen = false)}
+                      ?disabled=${this._deleting}
+                    >
                       ${this._localize("cancel")}
                     </button>
-                    <button class="btn btn-danger" @click=${this._deleteAsset}>
-                      ${this._localize("delete")}
+                    <button
+                      class="btn btn-danger"
+                      @click=${this._deleteAsset}
+                      ?disabled=${this._deleting}
+                      aria-label="${this._localize("delete")}"
+                    >
+                      ${this._deleting ? this._localize("deleting") : this._localize("delete")}
                     </button>
                   </div>
                 </div>
@@ -885,7 +1115,12 @@ class HaAssetPanel extends LitElement {
                   <div class="dialog-footer-left">
                     ${isEditing
                       ? html`
-                          <button class="btn btn-danger" @click=${() => (this._deleteConfirmOpen = true)}>
+                          <button
+                            class="btn btn-danger"
+                            @click=${() => (this._deleteConfirmOpen = true)}
+                            ?disabled=${this._saving || this._deleting}
+                            aria-label="${this._localize("delete")}"
+                          >
                             ${this._localize("delete")}
                           </button>
                         `
@@ -911,13 +1146,23 @@ class HaAssetPanel extends LitElement {
       <div class="container">
         <!-- Top Bar -->
         <div class="top-bar">
-          <button class="top-bar-sidebar-btn" @click=${this._toggleSidebar} title="${getCommonTranslation('menu', this.hass?.language)}">
-            <svg viewBox="0 0 24 24"><path fill="currentColor" d="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z"/></svg>
+          <button
+            class="top-bar-sidebar-btn"
+            @click=${this._toggleSidebar}
+            title="${getCommonTranslation('menu', this.hass?.language)}"
+            aria-label="${getCommonTranslation('menu', this.hass?.language)}"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z"/></svg>
           </button>
           <h1 class="top-bar-title">${this._localize("title")}</h1>
           <div class="top-bar-actions">
-            <button class="top-bar-action-btn" @click=${this._openAddDialog} title="${this._localize("add_asset")}">
-              <svg viewBox="0 0 24 24"><path fill="currentColor" d="M17,13H13V17H11V13H7V11H11V7H13V11H17M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/></svg>
+            <button
+              class="top-bar-action-btn"
+              @click=${this._openAddDialog}
+              title="${this._localize("add_asset")}"
+              aria-label="${this._localize("add_asset")}"
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M17,13H13V17H11V13H7V11H11V7H13V11H17M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z"/></svg>
             </button>
           </div>
         </div>
@@ -925,16 +1170,31 @@ class HaAssetPanel extends LitElement {
         <!-- Search Row -->
         <div class="search-row">
           <div class="search-row-input-wrapper">
-            <svg class="search-row-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/></svg>
+            <svg class="search-row-icon" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z"/></svg>
             <input
               class="search-row-input"
               type="text"
               placeholder="${getCommonTranslation('search', this.hass?.language)}"
+              aria-label="${getCommonTranslation('search', this.hass?.language)}"
               .value=${this._searchQuery}
               @input=${this._onSearchInput}
             />
           </div>
         </div>
+
+        <!-- Error banner (M-19: visible error feedback) -->
+        ${this._errorMessage
+          ? html`
+              <div class="error-banner" role="alert">
+                <span class="error-banner-message">${this._errorMessage}</span>
+                <button
+                  class="error-banner-close"
+                  @click=${this._dismissError}
+                  aria-label="${this._localize("cancel")}"
+                >&#x2715;</button>
+              </div>
+            `
+          : ""}
 
         ${this._loading
           ? html`<div class="loading"><ha-circular-progress active></ha-circular-progress></div>`
