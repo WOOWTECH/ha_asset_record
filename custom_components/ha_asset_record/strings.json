@@ -2,18 +2,18 @@
   "config": {
     "step": {
       "user": {
-        "title": "Ha Asset Record",
-        "description": "Welcome to Ha Asset Record! Click Submit to install. Use Options to manage assets."
+        "title": "Asset Record",
+        "description": "Welcome to Asset Record! Click Submit to install. Use Options to manage assets."
       }
     },
     "abort": {
-      "already_configured": "Ha Asset Record is already configured."
+      "already_configured": "Asset Record is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "Ha Asset Record Options",
+        "title": "Asset Record Options",
         "description": "Select an action to manage your assets.",
         "data": {
           "action": "Action"
@@ -24,7 +24,7 @@
       },
       "create_asset": {
         "title": "Create Asset",
-        "description": "Create a new asset device with all entities.",
+        "description": "Create a new asset with all entities.",
         "data": {
           "name": "Asset Name"
         },
@@ -34,7 +34,7 @@
       },
       "delete_asset": {
         "title": "Delete Asset",
-        "description": "Select an asset to delete. This will remove the device and all its entities.",
+        "description": "Select an asset to delete. This will remove the asset and all its entities.",
         "data": {
           "asset_id": "Asset"
         },
@@ -49,7 +49,7 @@
     }
   },
   "panel": {
-    "title": "Asset Dashboard",
+    "title": "Asset Record",
     "add_asset": "Add Asset",
     "edit_asset": "Edit Asset",
     "name": "Name",
@@ -69,7 +69,9 @@
     "total_value": "Total Value",
     "no_assets": "No assets yet",
     "no_assets_hint": "Click the button above to add your first asset",
-    "expired": "Expired"
+    "expired": "Expired",
+    "name_required": "Name is required",
+    "no_search_results": "No assets match your search"
   },
   "entity": {
     "datetime": {
