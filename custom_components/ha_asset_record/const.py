@@ -28,7 +28,8 @@ FIELD_VALUE: Final = "value"
 # Number entity limits
 VALUE_MIN: Final = 0
 VALUE_MAX: Final = 99999999
-VALUE_STEP: Final = 1
+# [L-07] Use 0.01 step to allow decimal values (e.g. 1299.99)
+VALUE_STEP: Final = 0.01
 
 # [L-05] Maximum length for text entity *state* value.
 # HA core TextEntity hard-caps state at 255 characters independently;

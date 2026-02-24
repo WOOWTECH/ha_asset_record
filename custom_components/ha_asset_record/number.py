@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.components.number import NumberEntity, NumberMode
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import (
     ATTR_ASSET_ID,
+    DOMAIN,
     FIELD_VALUE,
     VALUE_MAX,
     VALUE_MIN,
@@ -25,7 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,  # [M-06]
 ) -> None:
     """Set up number entities."""
     coordinator: AssetCoordinator = entry.runtime_data
@@ -37,16 +40,19 @@ async def async_setup_entry(
     async_add_entities(entities)
 
     # Listen for new assets
+    @callback  # [M-08] Listener is called from the event loop.
     def _async_add_asset_entities() -> None:
         """Add entities for new assets."""
-        existing_ids = {e.unique_id for e in entities}
+        # [M-09] Use entity registry for dedup instead of local list.
+        ent_reg = er.async_get(hass)
         new_entities: list[AssetNumberEntity] = []
 
         for asset in coordinator.assets.values():
             entity = _create_number_entity(coordinator, asset)
-            if entity.unique_id not in existing_ids:
+            if ent_reg.async_get_entity_id(
+                "number", DOMAIN, entity.unique_id
+            ) is None:
                 new_entities.append(entity)
-                entities.append(entity)
 
         if new_entities:
             async_add_entities(new_entities)
@@ -66,8 +72,11 @@ class AssetNumberEntity(AssetEntity, NumberEntity):
 
     _attr_native_min_value = VALUE_MIN
     _attr_native_max_value = VALUE_MAX
-    _attr_native_step = VALUE_STEP
+    _attr_native_step = VALUE_STEP  # [L-07] 0.01 to allow decimal values
     _attr_mode = NumberMode.BOX
+    # [L-06] Provide a unit of measurement for the value entity.
+    # Using a generic currency symbol; can be made configurable per-asset later.
+    _attr_native_unit_of_measurement = "$"
 
     @property
     def native_value(self) -> float | None:
@@ -75,7 +84,7 @@ class AssetNumberEntity(AssetEntity, NumberEntity):
         return self.asset.value
 
     @property
-    def extra_state_attributes(self) -> dict[str, str]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return extra state attributes."""
         return {ATTR_ASSET_ID: self.asset.id}
 
