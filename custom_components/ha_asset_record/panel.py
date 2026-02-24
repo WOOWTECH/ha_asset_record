@@ -30,6 +30,9 @@ def _get_panel_version() -> str:
 
     [M-15] Read the version from manifest.json instead of hardcoding it.
     Falls back to "0.0.0" if the manifest cannot be read.
+
+    Note: This is called at module-load time (not from the event loop)
+    to avoid blocking I/O warnings.
     """
     manifest_path = Path(__file__).parent / "manifest.json"
     try:
@@ -38,6 +41,11 @@ def _get_panel_version() -> str:
     except (FileNotFoundError, json.JSONDecodeError, OSError) as err:
         _LOGGER.warning("Could not read manifest.json for version: %s", err)
         return "0.0.0"
+
+
+# Read version once at import time (synchronous I/O is fine here,
+# outside the event loop).
+_PANEL_VERSION = _get_panel_version()
 
 
 def _get_panel_title(hass: HomeAssistant) -> str:
@@ -68,8 +76,8 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     # Get the frontend directory path
     frontend_dir = Path(__file__).parent / "frontend"
 
-    # [M-15] Derive version from manifest.json
-    panel_version = _get_panel_version()
+    # [M-15] Use pre-loaded version from module import
+    panel_version = _PANEL_VERSION
 
     # [M-13] Guard static path registration for idempotency.
     # Registering the same static path twice would raise an error.
