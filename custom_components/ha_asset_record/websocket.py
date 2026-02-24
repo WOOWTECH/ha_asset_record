@@ -10,6 +10,7 @@ import voluptuous as vol
 
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
@@ -26,16 +27,28 @@ from .coordinator import AssetCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
+# [L-13] Regex pattern for asset_id validation.
+# Asset IDs are generated as "asset_" + uuid4().hex (32 hex chars).
+ASSET_ID_PATTERN = r"^asset_[a-f0-9]+$"
+
 
 def _parse_datetime(value: str | None) -> datetime | None:
-    """Parse datetime string safely."""
+    """Parse a datetime string using HA's dt_util.
+
+    [H-10] Uses dt_util.parse_datetime() instead of datetime.fromisoformat().
+    Returns the parsed datetime (timezone-aware UTC) or None if the value is
+    empty/None.  Raises ValueError if the string is non-empty but unparseable
+    so the caller can send a proper error to the client ([H-09]).
+    """
     if not value:
         return None
-    try:
-        return datetime.fromisoformat(value)
-    except ValueError as err:
-        _LOGGER.warning("Invalid datetime format: %s - %s", value, err)
-        return None
+    parsed = dt_util.parse_datetime(value)
+    if parsed is None:
+        raise ValueError(f"Invalid datetime format: {value!r}")
+    # Ensure timezone-aware UTC
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=dt_util.UTC)
+    return dt_util.as_utc(parsed)
 
 
 @callback
@@ -47,12 +60,12 @@ def async_register_websocket_commands(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_delete_asset)
 
 
-def _get_coordinator(hass: HomeAssistant) -> AssetCoordinator | None:
-    """Get the coordinator from hass data."""
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        if hasattr(entry, "runtime_data") and entry.runtime_data:
-            return entry.runtime_data
-    return None
+def _get_coordinator_from_hass(hass: HomeAssistant) -> AssetCoordinator | None:
+    """Get the coordinator from hass.data.
+
+    [H-12] Direct lookup via hass.data[DOMAIN] instead of iterating config entries.
+    """
+    return hass.data.get(DOMAIN)
 
 
 @websocket_api.websocket_command(
@@ -67,7 +80,7 @@ async def ws_list_assets(
     msg: dict[str, Any],
 ) -> None:
     """Handle list assets command."""
-    coordinator = _get_coordinator(hass)
+    coordinator = _get_coordinator_from_hass(hass)
     if coordinator is None:
         connection.send_error(msg["id"], "not_found", "Integration not configured")
         return
@@ -76,17 +89,20 @@ async def ws_list_assets(
     connection.send_result(msg["id"], {"assets": assets})
 
 
+# [L-12] Write commands require admin access.
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "ha_asset_record/create",
-        vol.Required("name"): str,
-        vol.Optional("brand"): str,
-        vol.Optional("category"): str,
+        # [M-11] String length validation
+        vol.Required("name"): vol.All(str, vol.Length(max=255)),
+        vol.Optional("brand"): vol.All(str, vol.Length(max=255)),
+        vol.Optional("category"): vol.All(str, vol.Length(max=255)),
         vol.Optional("value"): vol.Coerce(float),
         vol.Optional("purchase_at"): str,
         vol.Optional("warranty_until"): str,
-        vol.Optional("manual_md"): str,
-        vol.Optional("maintenance_md"): str,
+        vol.Optional("manual_md"): vol.All(str, vol.Length(max=65535)),
+        vol.Optional("maintenance_md"): vol.All(str, vol.Length(max=65535)),
     }
 )
 @websocket_api.async_response
@@ -96,7 +112,7 @@ async def ws_create_asset(
     msg: dict[str, Any],
 ) -> None:
     """Handle create asset command."""
-    coordinator = _get_coordinator(hass)
+    coordinator = _get_coordinator_from_hass(hass)
     if coordinator is None:
         connection.send_error(msg["id"], "not_found", "Integration not configured")
         return
@@ -107,46 +123,62 @@ async def ws_create_asset(
         connection.send_error(msg["id"], "invalid_input", "Asset name is required")
         return
 
-    # Create asset with name
-    asset = await coordinator.async_create_asset(name)
-
-    # Update optional fields
-    if "brand" in msg:
-        await coordinator.async_update_asset(asset.id, FIELD_BRAND, msg["brand"])
-    if "category" in msg:
-        await coordinator.async_update_asset(asset.id, FIELD_CATEGORY, msg["category"])
-    if "value" in msg:
-        await coordinator.async_update_asset(asset.id, FIELD_VALUE, msg["value"])
+    # [H-09] Parse datetime fields with error responses for invalid values
+    purchase_at: datetime | None = None
     if "purchase_at" in msg and msg["purchase_at"]:
-        purchase_at = _parse_datetime(msg["purchase_at"])
-        if purchase_at:
-            await coordinator.async_update_asset(asset.id, FIELD_PURCHASE_AT, purchase_at)
+        try:
+            purchase_at = _parse_datetime(msg["purchase_at"])
+        except ValueError:
+            connection.send_error(
+                msg["id"],
+                "invalid_format",
+                f"Invalid purchase_at datetime: {msg['purchase_at']!r}",
+            )
+            return
+
+    warranty_until: datetime | None = None
     if "warranty_until" in msg and msg["warranty_until"]:
-        warranty_until = _parse_datetime(msg["warranty_until"])
-        if warranty_until:
-            await coordinator.async_update_asset(asset.id, FIELD_WARRANTY_UNTIL, warranty_until)
-    if "manual_md" in msg:
-        await coordinator.async_update_asset(asset.id, FIELD_MANUAL_MD, msg["manual_md"])
-    if "maintenance_md" in msg:
-        await coordinator.async_update_asset(asset.id, FIELD_MAINTENANCE_MD, msg["maintenance_md"])
+        try:
+            warranty_until = _parse_datetime(msg["warranty_until"])
+        except ValueError:
+            connection.send_error(
+                msg["id"],
+                "invalid_format",
+                f"Invalid warranty_until datetime: {msg['warranty_until']!r}",
+            )
+            return
 
-    # Get updated asset
-    updated_asset = coordinator.get_asset(asset.id)
-    connection.send_result(msg["id"], {"asset": updated_asset.to_dict() if updated_asset else None})
+    # [H-11] Use async_create_asset_full() for single save + single notify
+    asset = await coordinator.async_create_asset_full(
+        name,
+        brand=msg.get("brand", ""),
+        category=msg.get("category", ""),
+        value=msg.get("value", 0),
+        purchase_at=purchase_at,
+        warranty_until=warranty_until,
+        manual_md=msg.get("manual_md", ""),
+        maintenance_md=msg.get("maintenance_md", ""),
+    )
+
+    connection.send_result(msg["id"], {"asset": asset.to_dict()})
 
 
+# [L-12] Write commands require admin access.
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "ha_asset_record/update",
-        vol.Required("asset_id"): str,
-        vol.Optional("name"): str,
-        vol.Optional("brand"): str,
-        vol.Optional("category"): str,
+        # [L-13] Validate asset_id format
+        vol.Required("asset_id"): vol.All(str, vol.Match(ASSET_ID_PATTERN)),
+        # [M-11] String length validation
+        vol.Optional("name"): vol.All(str, vol.Length(max=255)),
+        vol.Optional("brand"): vol.All(str, vol.Length(max=255)),
+        vol.Optional("category"): vol.All(str, vol.Length(max=255)),
         vol.Optional("value"): vol.Coerce(float),
         vol.Optional("purchase_at"): vol.Any(str, None),
         vol.Optional("warranty_until"): vol.Any(str, None),
-        vol.Optional("manual_md"): str,
-        vol.Optional("maintenance_md"): str,
+        vol.Optional("manual_md"): vol.All(str, vol.Length(max=65535)),
+        vol.Optional("maintenance_md"): vol.All(str, vol.Length(max=65535)),
     }
 )
 @websocket_api.async_response
@@ -156,7 +188,7 @@ async def ws_update_asset(
     msg: dict[str, Any],
 ) -> None:
     """Handle update asset command."""
-    coordinator = _get_coordinator(hass)
+    coordinator = _get_coordinator_from_hass(hass)
     if coordinator is None:
         connection.send_error(msg["id"], "not_found", "Integration not configured")
         return
@@ -167,11 +199,13 @@ async def ws_update_asset(
         connection.send_error(msg["id"], "not_found", f"Asset {asset_id} not found")
         return
 
-    # Update name if provided (now properly persisted via FIELD_NAME)
+    # Update name if provided
     if "name" in msg:
         name = msg["name"].strip() if msg["name"] else ""
         if not name:
-            connection.send_error(msg["id"], "invalid_input", "Asset name cannot be empty")
+            connection.send_error(
+                msg["id"], "invalid_input", "Asset name cannot be empty"
+            )
             return
         await coordinator.async_update_asset(asset_id, FIELD_NAME, name)
 
@@ -182,24 +216,56 @@ async def ws_update_asset(
         await coordinator.async_update_asset(asset_id, FIELD_CATEGORY, msg["category"])
     if "value" in msg:
         await coordinator.async_update_asset(asset_id, FIELD_VALUE, msg["value"])
+
+    # [H-09] Parse datetime fields with error responses for invalid values
     if "purchase_at" in msg:
-        purchase_at = _parse_datetime(msg["purchase_at"])
+        try:
+            purchase_at = _parse_datetime(msg["purchase_at"])
+        except ValueError:
+            connection.send_error(
+                msg["id"],
+                "invalid_format",
+                f"Invalid purchase_at datetime: {msg['purchase_at']!r}",
+            )
+            return
         await coordinator.async_update_asset(asset_id, FIELD_PURCHASE_AT, purchase_at)
+
     if "warranty_until" in msg:
-        warranty_until = _parse_datetime(msg["warranty_until"])
-        await coordinator.async_update_asset(asset_id, FIELD_WARRANTY_UNTIL, warranty_until)
+        try:
+            warranty_until = _parse_datetime(msg["warranty_until"])
+        except ValueError:
+            connection.send_error(
+                msg["id"],
+                "invalid_format",
+                f"Invalid warranty_until datetime: {msg['warranty_until']!r}",
+            )
+            return
+        await coordinator.async_update_asset(
+            asset_id, FIELD_WARRANTY_UNTIL, warranty_until
+        )
+
     if "manual_md" in msg:
         await coordinator.async_update_asset(asset_id, FIELD_MANUAL_MD, msg["manual_md"])
     if "maintenance_md" in msg:
-        await coordinator.async_update_asset(asset_id, FIELD_MAINTENANCE_MD, msg["maintenance_md"])
+        await coordinator.async_update_asset(
+            asset_id, FIELD_MAINTENANCE_MD, msg["maintenance_md"]
+        )
 
-    connection.send_result(msg["id"], {"success": True})
+    # [M-12] Return updated asset dict (consistent with ws_create_asset)
+    updated_asset = coordinator.get_asset(asset_id)
+    connection.send_result(
+        msg["id"],
+        {"asset": updated_asset.to_dict() if updated_asset else None},
+    )
 
 
+# [L-12] Write commands require admin access.
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "ha_asset_record/delete",
-        vol.Required("asset_id"): str,
+        # [L-13] Validate asset_id format
+        vol.Required("asset_id"): vol.All(str, vol.Match(ASSET_ID_PATTERN)),
     }
 )
 @websocket_api.async_response
@@ -209,14 +275,16 @@ async def ws_delete_asset(
     msg: dict[str, Any],
 ) -> None:
     """Handle delete asset command."""
-    coordinator = _get_coordinator(hass)
+    coordinator = _get_coordinator_from_hass(hass)
     if coordinator is None:
         connection.send_error(msg["id"], "not_found", "Integration not configured")
         return
 
     success = await coordinator.async_delete_asset(msg["asset_id"])
     if not success:
-        connection.send_error(msg["id"], "not_found", f"Asset {msg['asset_id']} not found")
+        connection.send_error(
+            msg["id"], "not_found", f"Asset {msg['asset_id']} not found"
+        )
         return
 
     connection.send_result(msg["id"], {"success": True})
