@@ -99,8 +99,8 @@ async def ws_list_assets(
         vol.Optional("brand"): vol.All(str, vol.Length(max=255)),
         vol.Optional("category"): vol.All(str, vol.Length(max=255)),
         vol.Optional("value"): vol.Coerce(float),
-        vol.Optional("purchase_at"): str,
-        vol.Optional("warranty_until"): str,
+        vol.Optional("purchase_at"): vol.Any(str, None),
+        vol.Optional("warranty_until"): vol.Any(str, None),
         vol.Optional("manual_md"): vol.All(str, vol.Length(max=65535)),
         vol.Optional("maintenance_md"): vol.All(str, vol.Length(max=65535)),
     }
