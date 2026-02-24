@@ -54,15 +54,19 @@ class HaAssetRecordConfigFlow(ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         """Get the options flow for this handler."""
-        return HaAssetRecordOptionsFlow(config_entry)
+        # [H-03] Modern OptionsFlow: no need to pass config_entry to __init__.
+        # The base class provides self.config_entry as a property that looks up
+        # the entry by handler key after initialisation.
+        return HaAssetRecordOptionsFlow()
 
 
 class HaAssetRecordOptionsFlow(OptionsFlow):
-    """Handle options flow for Ha Asset Record."""
+    """Handle options flow for Ha Asset Record.
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
+    [H-03] No __init__ override needed. The modern OptionsFlow base class
+    provides self.config_entry via a property (available after init, not
+    during __init__). See config_entries.py OptionsFlow.config_entry.
+    """
 
     @property
     def coordinator(self) -> AssetCoordinator:
@@ -106,7 +110,10 @@ class HaAssetRecordOptionsFlow(OptionsFlow):
                 errors["name"] = "name_required"
             else:
                 await self.coordinator.async_create_asset(name)
-                return self.async_create_entry(data={})
+                # [L-03] Preserve existing options by merging, not overwriting
+                return self.async_create_entry(
+                    data={**self.config_entry.options},
+                )
 
         return self.async_show_form(
             step_id="create_asset",
@@ -137,7 +144,10 @@ class HaAssetRecordOptionsFlow(OptionsFlow):
             asset_id = user_input.get("asset_id")
             if asset_id:
                 await self.coordinator.async_delete_asset(asset_id)
-                return self.async_create_entry(data={})
+                # [L-03] Preserve existing options by merging, not overwriting
+                return self.async_create_entry(
+                    data={**self.config_entry.options},
+                )
 
         asset_options = {
             asset.id: asset.name for asset in assets.values()

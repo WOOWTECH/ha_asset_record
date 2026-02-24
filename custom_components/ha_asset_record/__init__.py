@@ -6,10 +6,11 @@ import logging
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ConfigEntryNotReady
 
 from .const import DOMAIN, PLATFORMS
 from .coordinator import AssetCoordinator
-from .panel import async_register_panel, async_unregister_panel
+from .panel import async_register_panel, unregister_panel
 from .websocket import async_register_websocket_commands
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,7 +24,20 @@ DATA_PANEL_REGISTERED = f"{DOMAIN}_panel_registered"
 async def async_setup_entry(hass: HomeAssistant, entry: AssetConfigEntry) -> bool:
     """Set up Ha Asset Record from a config entry."""
     coordinator = AssetCoordinator(hass, entry)
-    await coordinator.async_load()
+
+    # [C-01] The coordinator's async_load handles internal errors gracefully
+    # (logs and continues with empty data). However, if an unexpected exception
+    # propagates, raise ConfigEntryNotReady so HA will retry setup later.
+    try:
+        await coordinator.async_load()
+    except Exception as err:
+        raise ConfigEntryNotReady(
+            f"Failed to load asset data: {err}"
+        ) from err
+
+    # [H-12] Store coordinator in hass.data[DOMAIN] following standard HA
+    # pattern (see shopping_list). This is a single-instance integration.
+    hass.data[DOMAIN] = coordinator
 
     entry.runtime_data = coordinator
 
@@ -50,9 +64,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: AssetConfigEntry) -> bo
             e for e in hass.config_entries.async_entries(DOMAIN)
             if e.entry_id != entry.entry_id
         ]
-        if not remaining_entries and hass.data.get(DATA_PANEL_REGISTERED):
-            await async_unregister_panel(hass)
-            hass.data[DATA_PANEL_REGISTERED] = False
+        if not remaining_entries:
+            if hass.data.get(DATA_PANEL_REGISTERED):
+                # [M-14] unregister_panel is synchronous (no awaits)
+                unregister_panel(hass)
+            # [L-04] Clean up tracking keys from hass.data
+            hass.data.pop(DATA_PANEL_REGISTERED, None)
+            hass.data.pop(DOMAIN, None)
 
     return unload_ok
 

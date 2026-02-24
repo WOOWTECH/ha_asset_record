@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
 from homeassistant.components import frontend, panel_custom
 from homeassistant.components.http import StaticPathConfig
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN
 
@@ -16,17 +17,50 @@ _LOGGER = logging.getLogger(__name__)
 PANEL_URL_PATH = "ha-asset-record"
 PANEL_COMPONENT_NAME = "ha-asset-panel"
 PANEL_TITLE = "Device Record"
-PANEL_TITLE_ZH = "設備紀錄"
+PANEL_TITLE_ZH_HANT = "設備紀錄"
+PANEL_TITLE_ZH_HANS = "设备记录"
 PANEL_ICON = "mdi:devices"
-PANEL_VERSION = "1.2.0"
+
+# [M-13] Key to track whether the static path has already been registered
+_DATA_STATIC_REGISTERED = f"{DOMAIN}_static_registered"
+
+
+def _get_panel_version() -> str:
+    """Derive panel version from manifest.json.
+
+    [M-15] Read the version from manifest.json instead of hardcoding it.
+    Falls back to "0.0.0" if the manifest cannot be read.
+    """
+    manifest_path = Path(__file__).parent / "manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        return manifest.get("version", "0.0.0")
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as err:
+        _LOGGER.warning("Could not read manifest.json for version: %s", err)
+        return "0.0.0"
 
 
 def _get_panel_title(hass: HomeAssistant) -> str:
-    """Get panel title based on HA language setting."""
-    language = hass.config.language or "en"
-    if language.startswith("zh"):
-        return PANEL_TITLE_ZH
-    return PANEL_TITLE
+    """Get panel title based on HA language setting.
+
+    [L-10] Properly distinguish zh-Hant from zh-Hans.
+    - zh-Hant, zh-TW, zh-HK -> Traditional Chinese
+    - zh-Hans, zh-CN, zh-SG, zh (bare) -> Simplified Chinese
+    """
+    language = (hass.config.language or "en").lower().replace("_", "-")
+
+    if not language.startswith("zh"):
+        return PANEL_TITLE
+
+    # Traditional Chinese variants
+    if any(
+        tag in language
+        for tag in ("hant", "tw", "hk", "mo")
+    ):
+        return PANEL_TITLE_ZH_HANT
+
+    # Simplified Chinese (zh, zh-hans, zh-cn, zh-sg, etc.)
+    return PANEL_TITLE_ZH_HANS
 
 
 async def async_register_panel(hass: HomeAssistant) -> None:
@@ -34,14 +68,20 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     # Get the frontend directory path
     frontend_dir = Path(__file__).parent / "frontend"
 
-    # Register static path for frontend files
-    await hass.http.async_register_static_paths([
-        StaticPathConfig(
-            f"/{DOMAIN}/frontend",
-            str(frontend_dir),
-            cache_headers=False,
-        )
-    ])
+    # [M-15] Derive version from manifest.json
+    panel_version = _get_panel_version()
+
+    # [M-13] Guard static path registration for idempotency.
+    # Registering the same static path twice would raise an error.
+    if not hass.data.get(_DATA_STATIC_REGISTERED):
+        await hass.http.async_register_static_paths([
+            StaticPathConfig(
+                f"/{DOMAIN}/frontend",
+                str(frontend_dir),
+                cache_headers=False,
+            )
+        ])
+        hass.data[_DATA_STATIC_REGISTERED] = True
 
     # Register the panel
     await panel_custom.async_register_panel(
@@ -50,7 +90,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         frontend_url_path=PANEL_URL_PATH,
         sidebar_title=_get_panel_title(hass),
         sidebar_icon=PANEL_ICON,
-        module_url=f"/{DOMAIN}/frontend/ha-asset-panel.js?v={PANEL_VERSION}",
+        module_url=f"/{DOMAIN}/frontend/ha-asset-panel.js?v={panel_version}",
         require_admin=False,
         config={},
     )
@@ -58,10 +98,18 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     _LOGGER.info("Registered Ha Asset Record panel")
 
 
-async def async_unregister_panel(hass: HomeAssistant) -> bool:
-    """Unregister the panel."""
+@callback
+def unregister_panel(hass: HomeAssistant) -> bool:
+    """Unregister the panel.
+
+    [M-14] This function is synchronous because frontend.async_remove_panel
+    is a @callback (no awaits). Renamed from async_unregister_panel to
+    unregister_panel to reflect that it is not a coroutine.
+    """
     if PANEL_URL_PATH in hass.data.get(frontend.DATA_PANELS, {}):
         frontend.async_remove_panel(hass, PANEL_URL_PATH)
+        # [M-13] Clean up static path registration tracking
+        hass.data.pop(_DATA_STATIC_REGISTERED, None)
         _LOGGER.info("Unregistered Ha Asset Record panel")
         return True
     return False
