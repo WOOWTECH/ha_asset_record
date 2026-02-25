@@ -16,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 
 PANEL_URL_PATH = "ha-asset-record"
 PANEL_COMPONENT_NAME = "ha-asset-panel"
-PANEL_TITLE = "Device Record"
+PANEL_TITLE = "Asset Record"
 PANEL_TITLE_ZH_HANT = "設備紀錄"
 PANEL_TITLE_ZH_HANS = "设备记录"
 PANEL_ICON = "mdi:devices"
@@ -104,6 +104,32 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     )
 
     _LOGGER.info("Registered Ha Asset Record panel")
+
+
+async def async_update_panel_title(hass: HomeAssistant) -> None:
+    """Re-register the panel with an updated sidebar title.
+
+    panel_custom.async_register_panel() does not pass update=True to the
+    underlying frontend.async_register_built_in_panel(), so we must remove
+    the panel first, then re-register it with the new title.
+    """
+    if PANEL_URL_PATH not in hass.data.get(frontend.DATA_PANELS, {}):
+        return
+
+    frontend.async_remove_panel(hass, PANEL_URL_PATH)
+
+    panel_version = _PANEL_VERSION
+    await panel_custom.async_register_panel(
+        hass,
+        webcomponent_name=PANEL_COMPONENT_NAME,
+        frontend_url_path=PANEL_URL_PATH,
+        sidebar_title=_get_panel_title(hass),
+        sidebar_icon=PANEL_ICON,
+        module_url=f"/{DOMAIN}/frontend/ha-asset-panel.js?v={panel_version}",
+        require_admin=False,
+        config={},
+    )
+    _LOGGER.debug("Updated panel title to '%s'", _get_panel_title(hass))
 
 
 @callback
