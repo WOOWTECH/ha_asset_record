@@ -17,8 +17,6 @@ _LOGGER = logging.getLogger(__name__)
 PANEL_URL_PATH = "ha-asset-record"
 PANEL_COMPONENT_NAME = "ha-asset-panel"
 PANEL_TITLE = "Asset Record"
-PANEL_TITLE_ZH_HANT = "設備紀錄"
-PANEL_TITLE_ZH_HANS = "设备记录"
 PANEL_ICON = "mdi:devices"
 
 # [M-13] Key to track whether the static path has already been registered
@@ -48,29 +46,6 @@ def _get_panel_version() -> str:
 _PANEL_VERSION = _get_panel_version()
 
 
-def _get_panel_title(hass: HomeAssistant) -> str:
-    """Get panel title based on HA language setting.
-
-    [L-10] Properly distinguish zh-Hant from zh-Hans.
-    - zh-Hant, zh-TW, zh-HK -> Traditional Chinese
-    - zh-Hans, zh-CN, zh-SG, zh (bare) -> Simplified Chinese
-    """
-    language = (hass.config.language or "en").lower().replace("_", "-")
-
-    if not language.startswith("zh"):
-        return PANEL_TITLE
-
-    # Traditional Chinese variants
-    if any(
-        tag in language
-        for tag in ("hant", "tw", "hk", "mo")
-    ):
-        return PANEL_TITLE_ZH_HANT
-
-    # Simplified Chinese (zh, zh-hans, zh-cn, zh-sg, etc.)
-    return PANEL_TITLE_ZH_HANS
-
-
 async def async_register_panel(hass: HomeAssistant) -> None:
     """Register the panel."""
     # Get the frontend directory path
@@ -96,7 +71,7 @@ async def async_register_panel(hass: HomeAssistant) -> None:
         hass,
         webcomponent_name=PANEL_COMPONENT_NAME,
         frontend_url_path=PANEL_URL_PATH,
-        sidebar_title=_get_panel_title(hass),
+        sidebar_title=PANEL_TITLE,
         sidebar_icon=PANEL_ICON,
         module_url=f"/{DOMAIN}/frontend/ha-asset-panel.js?v={panel_version}",
         require_admin=False,
@@ -104,32 +79,6 @@ async def async_register_panel(hass: HomeAssistant) -> None:
     )
 
     _LOGGER.info("Registered Ha Asset Record panel")
-
-
-async def async_update_panel_title(hass: HomeAssistant) -> None:
-    """Re-register the panel with an updated sidebar title.
-
-    panel_custom.async_register_panel() does not pass update=True to the
-    underlying frontend.async_register_built_in_panel(), so we must remove
-    the panel first, then re-register it with the new title.
-    """
-    if PANEL_URL_PATH not in hass.data.get(frontend.DATA_PANELS, {}):
-        return
-
-    frontend.async_remove_panel(hass, PANEL_URL_PATH)
-
-    panel_version = _PANEL_VERSION
-    await panel_custom.async_register_panel(
-        hass,
-        webcomponent_name=PANEL_COMPONENT_NAME,
-        frontend_url_path=PANEL_URL_PATH,
-        sidebar_title=_get_panel_title(hass),
-        sidebar_icon=PANEL_ICON,
-        module_url=f"/{DOMAIN}/frontend/ha-asset-panel.js?v={panel_version}",
-        require_admin=False,
-        config={},
-    )
-    _LOGGER.debug("Updated panel title to '%s'", _get_panel_title(hass))
 
 
 @callback
