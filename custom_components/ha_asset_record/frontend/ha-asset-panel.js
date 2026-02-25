@@ -31,22 +31,6 @@ const sharedStylesLit = `
     margin: -16px -16px 16px -16px;
     border-bottom: 1px solid var(--divider-color);
   }
-  .top-bar-sidebar-btn {
-    width: 40px;
-    height: 40px;
-    border: none;
-    background: transparent;
-    color: var(--app-header-text-color, var(--primary-text-color));
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 50%;
-    transition: background 0.2s;
-    flex-shrink: 0;
-  }
-  .top-bar-sidebar-btn:hover { background: rgba(127, 127, 127, 0.2); }
-  .top-bar-sidebar-btn svg { width: 24px; height: 24px; }
   .top-bar-title {
     flex: 1;
     font-size: 20px;
@@ -120,9 +104,9 @@ const sharedStylesLit = `
 
 // Translation helper
 const commonTranslations = {
-  en: { menu: 'Menu', search: 'Search...', add: 'Add', more_actions: 'More actions' },
-  'zh-Hant': { menu: '選單', search: '搜尋...', add: '新增', more_actions: '更多操作' },
-  'zh-Hans': { menu: '菜单', search: '搜索...', add: '添加', more_actions: '更多操作' },
+  en: { search: 'Search...', add: 'Add', more_actions: 'More actions' },
+  'zh-Hant': { search: '搜尋...', add: '新增', more_actions: '更多操作' },
+  'zh-Hans': { search: '搜索...', add: '添加', more_actions: '更多操作' },
 };
 function getCommonTranslation(key, lang = 'en') {
   const langKey = lang?.startsWith('zh-TW') || lang?.startsWith('zh-HK') ? 'zh-Hant' :
@@ -577,10 +561,6 @@ class HaAssetPanel extends LitElement {
     this._errorMessage = "";
     this._boundHandleKeydown = this._handleKeydown.bind(this);
     this._prevLanguage = null;
-  }
-
-  _toggleSidebar() {
-    this.dispatchEvent(new CustomEvent("hass-toggle-menu", { bubbles: true, composed: true }));
   }
 
   _onSearchInput(e) {
@@ -1161,14 +1141,6 @@ class HaAssetPanel extends LitElement {
       <div class="container">
         <!-- Top Bar -->
         <div class="top-bar">
-          <button
-            class="top-bar-sidebar-btn"
-            @click=${this._toggleSidebar}
-            title="${getCommonTranslation('menu', this.hass?.language)}"
-            aria-label="${getCommonTranslation('menu', this.hass?.language)}"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z"/></svg>
-          </button>
           <h1 class="top-bar-title">${this._localize("title")}</h1>
           <div class="top-bar-actions">
             <button
