@@ -20,13 +20,12 @@ A Home Assistant custom component for managing and tracking your home assets, in
 ### HACS (Recommended)
 
 1. Open HACS in your Home Assistant instance
-2. Click on "Integrations"
-3. Click the three dots in the top right corner and select "Custom repositories"
-4. Add this repository URL: `https://github.com/WOOWTECH/ha_asset_record`
-5. Select "Integration" as the category
-6. Click "Add"
-7. Search for "Ha Asset Record" and install it
-8. Restart Home Assistant
+2. Click the three dots in the top right corner and select "Custom repositories"
+3. Add this repository URL: `https://github.com/WOOWTECH/ha_asset_record`
+4. Select "Integration" as the category
+5. Click "Add"
+6. Search for "Ha Asset Record" and install it
+7. Restart Home Assistant
 
 ### Manual Installation
 
@@ -38,12 +37,12 @@ A Home Assistant custom component for managing and tracking your home assets, in
 
 1. Go to **Settings** > **Devices & Services**
 2. Click **+ Add Integration**
-3. Search for "Ha Asset Record" or "Device Record"
+3. Search for "Ha Asset Record"
 4. Follow the setup wizard
 
 ## Usage
 
-After installation, a new "Device Record" panel will appear in your Home Assistant sidebar. From there you can:
+After installation, a new "Asset Record" panel will appear in your Home Assistant sidebar. From there you can:
 
 1. **Add Assets**: Click the "+" button to add a new asset
 2. **Edit Assets**: Click on any asset in the table to edit its details
