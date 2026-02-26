@@ -1,3 +1,5 @@
+**English** | [繁體中文](README_zh-TW.md)
+
 # Ha Asset Record
 
 A Home Assistant custom component for managing and tracking your home assets, including appliances, electronics, and other valuable items.
@@ -14,6 +16,16 @@ A Home Assistant custom component for managing and tracking your home assets, in
 - **Search & Filter**: Quickly find assets by name, brand, or category
 - **Multi-language Support**: English and Traditional Chinese (zh-Hant)
 - **Home Assistant Integration**: Each asset creates entities that can be used in automations
+
+## Screenshots
+
+| Main Panel | Add/Edit Dialog |
+|:---:|:---:|
+| ![Main Panel](screenshots/main-panel.png) | ![Add Dialog](screenshots/add-dialog.png) |
+
+| Mobile View | Search Filter |
+|:---:|:---:|
+| ![Mobile View](screenshots/mobile-view.png) | ![Search Filter](screenshots/search-filter.png) |
 
 ## Installation
 
