@@ -60,4 +60,4 @@ If you encounter any issues or have feature requests, please [open an issue](htt
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the [GPL-3.0 License](LICENSE).

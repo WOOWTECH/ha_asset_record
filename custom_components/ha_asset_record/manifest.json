@@ -1,13 +1,13 @@
 {
   "domain": "ha_asset_record",
   "name": "Asset Record",
-  "codeowners": [],
+  "codeowners": ["@WOOWTECH"],
   "config_flow": true,
   "dependencies": ["http"],
-  "documentation": "https://github.com/placeholder/ha-asset-record",
+  "documentation": "https://github.com/WOOWTECH/ha_asset_record",
   "homeassistant": "2025.12.0",
   "iot_class": "calculated",
-  "issue_tracker": "https://github.com/placeholder/ha-asset-record/issues",
+  "issue_tracker": "https://github.com/WOOWTECH/ha_asset_record/issues",
   "requirements": [],
   "single_config_entry": true,
   "version": "1.0.1"
