@@ -70,13 +70,16 @@ class AssetEntity(Entity):
 
         # [M-10] If the asset name changed, update the device registry name
         # so the HA UI reflects the rename immediately.
-        if updated_asset.name != self.asset.name:
-            dev_reg = dr.async_get(self.hass)
-            device = dev_reg.async_get_device(
-                identifiers={(DOMAIN, self.asset.id)}
-            )
-            if device is not None:
-                dev_reg.async_update_device(device.id, name=updated_asset.name)
+        # Compare against device.name (the old name stored in the registry)
+        # instead of self.asset.name, because the coordinator mutates the
+        # Asset object in-place making self.asset.name already equal to
+        # updated_asset.name by the time this callback fires.
+        dev_reg = dr.async_get(self.hass)
+        device = dev_reg.async_get_device(
+            identifiers={(DOMAIN, self.asset.id)}
+        )
+        if device is not None and device.name != updated_asset.name:
+            dev_reg.async_update_device(device.id, name=updated_asset.name)
 
         # Refresh the cached asset reference.
         self.asset = updated_asset

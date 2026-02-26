@@ -13,6 +13,7 @@ import uuid
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
@@ -320,6 +321,14 @@ class AssetCoordinator:
             return False
         asset = self._assets.pop(asset_id)
         await self._async_save()
+
+        # Remove the device from the device registry so it no longer
+        # appears in Device & Services after the asset is deleted.
+        dev_reg = dr.async_get(self.hass)
+        device = dev_reg.async_get_device(identifiers={(DOMAIN, asset_id)})
+        if device is not None:
+            dev_reg.async_remove_device(device.id)
+
         self._notify_listeners()
         _LOGGER.info("Deleted asset: %s (%s)", asset.name, asset_id)
         return True

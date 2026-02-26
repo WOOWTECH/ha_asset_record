@@ -7,6 +7,7 @@ import logging
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 
 from .const import DOMAIN, PLATFORMS
 from .coordinator import AssetCoordinator
@@ -73,6 +74,25 @@ async def async_unload_entry(hass: HomeAssistant, entry: AssetConfigEntry) -> bo
             hass.data.pop(DOMAIN, None)
 
     return unload_ok
+
+
+async def async_remove_config_entry_device(
+    hass: HomeAssistant,
+    config_entry: AssetConfigEntry,
+    device_entry: dr.DeviceEntry,
+) -> bool:
+    """Allow device removal from Device & Services UI for orphaned devices.
+
+    Returns True (allow removal) when the asset no longer exists in the
+    coordinator, enabling users to clean up stale device entries manually.
+    """
+    coordinator: AssetCoordinator = config_entry.runtime_data
+    for identifier in device_entry.identifiers:
+        if identifier[0] == DOMAIN:
+            asset_id = identifier[1]
+            if coordinator.get_asset(asset_id) is not None:
+                return False
+    return True
 
 
 async def async_update_options(hass: HomeAssistant, entry: AssetConfigEntry) -> None:
